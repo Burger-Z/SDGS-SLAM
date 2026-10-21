@@ -30,7 +30,7 @@ Add to your config dict (e.g., `configs/replica/slam.py`):
 ```python
 config = dict(
     # ... existing config ...
-    
+
     use_diffusion=True,
     diffusion=dict(
         model_id="stabilityai/stable-diffusion-2",
@@ -49,7 +49,7 @@ config = dict(
         guidance_scale=7.5,
         controlnet_scale=0.7,  # Depth preservation strength
     ),
-    
+
     # ... rest of config ...
 )
 ```
@@ -101,7 +101,7 @@ depth = depth.permute(2, 0, 1)         # (H, W, 1) -> (1, H, W)
 if diffusion_model is not None and config['diffusion'].get('apply_before_tracking', True):
     print(f"[Frame {time_idx}] Applying diffusion enhancement...")
     mode = config['diffusion'].get('img2img', {}).get('mode', 'img2img')
-    
+
     try:
         if mode == 'depth_guided':
             color = diffusion_model.enhance_with_depth_guidance(
@@ -138,31 +138,37 @@ if diffusion_model is not None and config['diffusion'].get('apply_before_trackin
 ## Enhancement Modes
 
 ### 1. Standard Image-to-Image (img2img)
+
 ```python
 mode='img2img'
 strength=0.5  # Subtle enhancement
 ```
+
 - Basic enhancement without guidance
 - Fastest option
 - Best for general quality improvement
 
 ### 2. Depth-Guided (RECOMMENDED for SLAM)
+
 ```python
 mode='depth_guided'
 enable_controlnet=True
 strength=0.6
 controlnet_scale=0.7  # How strongly to preserve depth
 ```
+
 - Uses ControlNet to preserve depth structure
 - Enhances appearance while maintaining geometry
 - Critical for maintaining point cloud accuracy
 
 ### 3. Progressive Enhancement
+
 ```python
 mode='progressive'
 num_progressive_steps=2
 strength_schedule=[0.7, 0.5]  # Decreasing strength
 ```
+
 - Multi-step refinement
 - More stable results
 - Better quality but slower
@@ -170,17 +176,20 @@ strength_schedule=[0.7, 0.5]  # Decreasing strength
 ## Hyperparameter Tuning
 
 ### Strength (0-1)
+
 - **0.3-0.4**: Subtle enhancement, very close to original
 - **0.5-0.6**: Moderate enhancement (RECOMMENDED)
 - **0.7-0.8**: Strong enhancement, more creative
 - **0.9+**: Very strong, may distort geometry
 
 ### Guidance Scale
+
 - **5.0-7.5**: Conservative, follows prompt loosely
 - **7.5-10.0**: Moderate guidance (RECOMMENDED: 7.5)
 - **10.0-15.0**: Strong guidance, may over-constrain
 
 ### ControlNet Conditioning Scale (depth guidance)
+
 - **0.5-0.7**: Moderate depth preservation
 - **0.7-0.9**: Strong depth preservation (RECOMMENDED: 0.7)
 - **0.9-1.0**: Very strong, minimal appearance change
@@ -188,11 +197,13 @@ strength_schedule=[0.7, 0.5]  # Decreasing strength
 ## Model Options
 
 ### Base Models
+
 - `"stabilityai/stable-diffusion-2"` - Default, good balance
 - `"runwayml/stable-diffusion-v1-5"` - Faster, lower VRAM
 - `"stabilityai/stable-diffusion-2-1"` - Higher quality
 
 ### ControlNet Options
+
 - `"lllyasviel/sd-controlnet-depth"` - Depth preservation (RECOMMENDED)
 - `"lllyasviel/sd-controlnet-normal"` - Surface normals
 - `"lllyasviel/sd-controlnet-canny"` - Edge detection
@@ -200,6 +211,7 @@ strength_schedule=[0.7, 0.5]  # Decreasing strength
 ## Memory Management
 
 ### Enable for Low-VRAM Systems
+
 ```python
 use_fp16=True,  # Half precision
 enable_attention_slicing=True,  # Memory efficient attention
@@ -207,11 +219,13 @@ enable_memory_efficient_attention=True,  # xformers optimization
 ```
 
 ### Reduce Inference Steps
+
 ```python
 num_inference_steps=15  # Faster but lower quality (default: 20)
 ```
 
 ### Reduce Model Size
+
 ```python
 model_id="runwayml/stable-diffusion-v1-5"  # Smaller than SD2
 ```
@@ -227,22 +241,26 @@ model_id="runwayml/stable-diffusion-v1-5"  # Smaller than SD2
 ## Troubleshooting
 
 ### Out of Memory (OOM)
+
 - Reduce `num_inference_steps` (try 15)
 - Enable `use_fp16=True`
 - Enable `enable_attention_slicing=True`
 - Use smaller model: `"runwayml/stable-diffusion-v1-5"`
 
 ### Slow Inference
+
 - Install `xformers`: `pip install xformers`
 - Reduce `num_inference_steps`
 - Use `use_fp16=True`
 
 ### Artifacts in Output
+
 - Reduce `strength` (try 0.5)
 - Reduce `guidance_scale` (try 7.5)
 - Disable depth guidance for problematic frames
 
 ### Geometry Distortion
+
 - Increase `controlnet_conditioning_scale` (try 0.9)
 - Reduce `strength` (try 0.5)
 - Use `progressive` mode instead
@@ -250,6 +268,7 @@ model_id="runwayml/stable-diffusion-v1-5"  # Smaller than SD2
 ## Example Configurations
 
 ### High Quality (Slow)
+
 ```python
 use_diffusion=True,
 diffusion=dict(
@@ -267,6 +286,7 @@ diffusion=dict(
 ```
 
 ### Fast (Low Quality)
+
 ```python
 use_diffusion=True,
 diffusion=dict(
@@ -283,6 +303,7 @@ diffusion=dict(
 ```
 
 ### Balanced (Recommended)
+
 ```python
 use_diffusion=True,
 diffusion=dict(

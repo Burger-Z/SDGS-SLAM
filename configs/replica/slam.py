@@ -18,6 +18,7 @@ mapping_iters = 60
 group_name = "Replica"
 run_name = f"{scene_name}_{seed}"
 
+
 config = dict(
     workdir=f"./experiments/{group_name}",
     run_name=run_name,
@@ -26,7 +27,7 @@ config = dict(
     map_every=map_every, # Mapping every nth frame
     keyframe_every=keyframe_every, # Keyframe every nth frame
     mapping_window_size=mapping_window_size, # Mapping window size
-    report_global_progress_every=500, # Report Global Progress every nth frame
+    report_global_progress_every=100, # Report Global Progress every nth frame # change
     eval_every=5, # Evaluate every nth frame (at end of SLAM)
     scene_radius_depth_ratio=3, # Max First Frame Depth to Scene Radius Ratio (For Pruning/Densification)
     mean_sq_dist_method="projective", # ["projective", "knn"] (Type of Mean Squared Distance Calculation for Scale of Gaussians)
@@ -34,9 +35,38 @@ config = dict(
     load_checkpoint=False,
     checkpoint_time_idx=0,
     save_checkpoints=True, # Save Checkpoints
-    checkpoint_interval=500, # Checkpoint Interval
+    checkpoint_interval=125, # Checkpoint Interval
     save_timestamp_keyframes=False,
     use_wandb=True,
+    
+    use_diffusion=True,
+    use_flow_match = False,
+    diffusion=dict(
+        model_id="srunwayml/stable-diffusion-v1-5",
+        img2img=dict(
+            mode='depth_guided',
+            enable_controlnet=True,
+            controlnet_id='lllyasviel/sd-controlnet-depth',
+            num_inference_steps=12,
+            use_fp16=True,
+            #device='cpu',  # Use CPU instead
+            #use_fp16=False,  # CPU doesn't support FP16 well
+        ),
+        apply_before_tracking=True,
+        prompt='high quality, detailed, sharp focus',
+        strength=0.6,
+        guidance_scale=7.5,
+        controlnet_scale=0.7,
+    ),
+    
+    flow_match=dict(
+        num_inference_steps=12,
+        shift=1.0,
+        sigma_max=14.6,
+        sigma_min=0.003,
+        denoising_strength=1.0,
+        extra_one_step=False,
+    ),
     wandb=dict(
         entity="my-project", # Please change the entity name
         project="SGS-SLAM",
@@ -49,12 +79,14 @@ config = dict(
         basedir="./data/Replica",
         gradslam_data_cfg="./configs/data/replica.yaml",
         sequence=scene_name,
-        desired_image_height=680,
-        desired_image_width=1200,
-        start=0,
-        end=-1,
-        stride=1,
-        num_frames=-1, # Set to -1 to use all frames
+        #basedir="./data/Replica_subset",  # Use the subset
+        #sequence="room0",
+        desired_image_height=680,#680
+        desired_image_width=1200,#1200
+        start=0,                    # Start from frame 0
+        end=20,                    # Use only first 500 frames,500,300,200,200,100,200(track,mapiter up)
+        stride=1,                   # Take every 5th frame = 100 frames total,5,4,2,1,1,1(track,mapiter up)
+        num_frames=-1, 
         load_semantics=True,
         num_semantic_classes=101
     ),

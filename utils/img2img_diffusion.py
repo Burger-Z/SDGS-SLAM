@@ -22,7 +22,7 @@ class ImageToImageDiffusion:
     
     def __init__(
         self,
-        model_id: str = "stabilityai/stable-diffusion-2",
+        model_id: str = "runwayml/stable-diffusion-v1-5",
         enable_controlnet: bool = False,
         controlnet_id: str = "lllyasviel/sd-controlnet-depth",
         num_inference_steps: int = 20,
@@ -309,7 +309,7 @@ def create_img2img_diffusion(config: dict) -> Optional[ImageToImageDiffusion]:
     img2img_config = diffusion_config.get('img2img', {})
     
     return ImageToImageDiffusion(
-        model_id=img2img_config.get('model_id', 'stabilityai/stable-diffusion-2'),
+        model_id=img2img_config.get('model_id', 'runwayml/stable-diffusion-v1-5'),
         enable_controlnet=img2img_config.get('enable_controlnet', False),
         controlnet_id=img2img_config.get('controlnet_id', 'lllyasviel/sd-controlnet-depth'),
         num_inference_steps=img2img_config.get('num_inference_steps', 20),

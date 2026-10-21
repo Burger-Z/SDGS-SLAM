@@ -6,9 +6,12 @@ import time
 import pandas as pd
 from importlib.machinery import SourceFileLoader
 
+
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _BASE_DIR)
-
+from utils.img2img_diffusion import ImageToImageDiffusion, create_img2img_diffusion #diff
+# flow scheduler
+from utils.flow_match_scheduler import FlowMatchScheduler
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,7 +46,20 @@ from utils.slam_external import calc_ssim, build_rotation, prune_gaussians, dens
 
 from diff_gaussian_rasterization import GaussianRasterizer as Renderer
 
-
+def build_flowmatch_scheduler(config: dict):
+    flow_cfg = config.get("flow_match", {})
+    scheduler = FlowMatchScheduler(
+        num_inference_steps=flow_cfg.get("num_inference_steps", 12),
+        shift=flow_cfg.get("shift", 1.0),
+        sigma_max=flow_cfg.get("sigma_max", 14.6),
+        sigma_min=flow_cfg.get("sigma_min", 0.003),
+        extra_one_step=flow_cfg.get("extra_one_step", False),
+    )
+    scheduler.set_timesteps(
+        flow_cfg.get("num_inference_steps", 12),
+        denoising_strength=flow_cfg.get("denoising_strength", 1.0),
+    )
+    return scheduler
 def get_dataset(config_dict, basedir, sequence, **kwargs):
     if config_dict["dataset_name"].lower() in ["icl"]:
         return ICLDataset(config_dict, basedir, sequence, **kwargs)
@@ -195,10 +211,13 @@ def initialize_first_timestep(dataset, num_frames, scene_radius_depth_ratio, mea
     else:
         color, depth, intrinsics, pose = dataset[0]
 
+
+        
     # Process RGB-D Data
     color = color.permute(2, 0, 1) / 255 # (H, W, C) -> (C, H, W)
     depth = depth.permute(2, 0, 1) # (H, W, 1) -> (1, H, W)
-    
+    # introduce flow scheduler 
+
     if load_semantics:
         semantic_id = semantic_id.permute(2, 0, 1) # (H, W, 1) -> (1, H, W)
         semantic_color = semantic_color.permute(2, 0, 1) / 255 # (H, W, 3) -> (3, H, W)
@@ -580,7 +599,30 @@ def rgbd_slam(config: dict):
     else:
         load_semantics = dataset_config["load_semantics"]
         num_semantic_classes = dataset_config["num_semantic_classes"]
-    # Poses are relative to the first frame
+    # ===== DIFFUSION MODEL INITIALIZATION =====
+    use_diffusion = config.get('use_diffusion', False)
+    if use_diffusion:
+        print("Initializing Image-to-Image Diffusion Model...")
+        diffusion_model = create_img2img_diffusion(config)
+    else:
+        diffusion_model = None
+    # ==========================================
+    flow_scheduler = None
+    if config.get("use_flow_match"):
+        print(f"Applying flow matcher...")
+        flow_cfg = config.get("flow_match", {})
+        flow_scheduler = FlowMatchScheduler(
+            num_inference_steps=flow_cfg.get("num_inference_steps", 12),
+            shift=flow_cfg.get("shift", 1.0),
+            sigma_max=flow_cfg.get("sigma_max", 14.6),
+            sigma_min=flow_cfg.get("sigma_min", 0.003),
+            extra_one_step=flow_cfg.get("extra_one_step", False),
+        )
+        flow_scheduler.set_timesteps(
+            flow_cfg.get("num_inference_steps", 12),
+            denoising_strength=flow_cfg.get("denoising_strength", 1.0),
+        )
+   # Poses are relative to the first frame
     dataset = get_dataset(
         config_dict=gradslam_data_cfg,
         basedir=dataset_config["basedir"],
@@ -712,7 +754,12 @@ def rgbd_slam(config: dict):
                 color = color.permute(2, 0, 1) / 255
                 depth = depth.permute(2, 0, 1)
                 curr_keyframe = {'id': time_idx, 'est_w2c': curr_w2c, 'color': color, 'depth': depth}
-
+                if flow_scheduler is not None:
+                    current = color.clone().float()
+                    for timestep in flow_scheduler.timesteps:
+                        pred = torch.zeros_like(current)
+                        current = flow_scheduler.step(pred, timestep, current)
+                    color = current
                 if load_semantics:
                     semantic_id = semantic_id.permute(2, 0, 1)
                     semantic_color = semantic_color.permute(2, 0, 1) / 255
@@ -735,6 +782,52 @@ def rgbd_slam(config: dict):
         # Process RGB-D Data
         color = color.permute(2, 0, 1) / 255
         depth = depth.permute(2, 0, 1)
+        # ===== APPLY IMAGE-TO-IMAGE DIFFUSION =====
+        if diffusion_model is not None and config['diffusion'].get('apply_before_tracking', True):
+            print(f"[Frame {time_idx}] Applying diffusion enhancement...")
+            mode = config['diffusion'].get('img2img', {}).get('mode', 'img2img')
+
+            try:
+                if mode == 'depth_guided':
+                    color = diffusion_model.enhance_with_depth_guidance(
+                        color, depth,
+                        prompt=config['diffusion'].get('prompt', 'high quality scene'),
+                        negative_prompt=config['diffusion'].get('negative_prompt', ''),
+                        strength=config['diffusion'].get('strength', 0.6),
+                        guidance_scale=config['diffusion'].get('guidance_scale', 7.5),
+                        controlnet_conditioning_scale=config['diffusion'].get('controlnet_scale', 0.7),
+                        seed=time_idx,
+                    )
+                elif mode == 'semantic_guided':
+                    color = diffusion_model.enhance_with_depth_guidance(
+                        color, semantic_color,
+                        prompt=config['diffusion'].get('prompt', 'high quality scene'),
+                        negative_prompt=config['diffusion'].get('negative_prompt', ''),
+                        strength=config['diffusion'].get('strength', 0.6),
+                        guidance_scale=config['diffusion'].get('guidance_scale', 7.5),
+                        controlnet_conditioning_scale=config['diffusion'].get('controlnet_scale', 0.7),
+                        seed=time_idx,
+                    )
+                elif mode == 'progressive':
+                    color = diffusion_model.enhance_progressive(
+                        color, depth=depth,
+                        num_steps=config['diffusion'].get('img2img', {}).get('num_progressive_steps', 2),
+                        prompt=config['diffusion'].get('prompt', 'high quality scene'),
+                    )
+                else:  # 'img2img'
+                    color = diffusion_model.enhance_with_img2img(
+                        color,
+                        prompt=config['diffusion'].get('prompt', 'high quality scene'),
+                        negative_prompt=config['diffusion'].get('negative_prompt', ''),
+                        strength=config['diffusion'].get('strength', 0.6),
+                        guidance_scale=config['diffusion'].get('guidance_scale', 7.5),
+                        seed=time_idx,
+                    )
+                print(f"✓ Enhancement completed")
+            except Exception as e:
+                print(f"✗ Error during diffusion: {e}")
+                print(f"Continuing with original frame...")
+# ==========================================
         gt_w2c_all_frames.append(gt_w2c)
         curr_gt_w2c = gt_w2c_all_frames
         # Optimize only current time step for tracking
